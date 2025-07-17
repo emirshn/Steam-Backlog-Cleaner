@@ -10,3 +10,5 @@ umap-learn
 plotly
 python-dotenv
 sklearn.metrics.pairwise
+ast
+dotenv

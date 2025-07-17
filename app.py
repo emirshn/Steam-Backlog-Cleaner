@@ -84,18 +84,13 @@ def unified_recommend(
     df,
     unplayed_df,
     embeddings_np,
-    tag_index_map,
-    playtime_thresh=4,
-    ach_thresh=5,
-    play_ach_thresh=1
 ):
     if input_name:
         return recommend_by_game_name_with_hybrid(
-            input_name, top_n, df, unplayed_df, embeddings_np, tag_index_map,
-            playtime_thresh, ach_thresh, play_ach_thresh
+            input_name, top_n, df, unplayed_df, embeddings_np,
         )
     else:
-        results_df = compute_hybrid_scores(df, unplayed_df, embeddings_np, tag_index_map, top_n=top_n)
+        results_df = compute_hybrid_scores(df, unplayed_df, embeddings_np, top_n=top_n)
         results = [(row["name"], row["final_score"], row["new_cluster"]) for _, row in results_df.iterrows()]
         return results, None, df
 
@@ -253,10 +248,6 @@ if ('df' in st.session_state and 'embeddings' in st.session_state and
             df=df,
             unplayed_df=unplayed_df,
             embeddings_np=embeddings_np,
-            tag_index_map=tag_index_map,
-            playtime_thresh=play_thresh,
-            ach_thresh=ach_thresh,
-            play_ach_thresh=play_ach_thresh,
         )
 
 

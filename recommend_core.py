@@ -145,23 +145,27 @@ def compute_hybrid_scores(df, unplayed_df, embeddings_np, tag_classes, top_n=10)
     if liked_df.empty:
         return pd.DataFrame()
 
+    # Embedding similarity 
     liked_mask = df["liked"].values
     liked_emb_mean = embeddings_np[liked_mask].mean(axis=0).reshape(1, -1)
     sims = cosine_similarity(embeddings_np, liked_emb_mean).flatten()
     df["sim_score"] = sims
 
+    #  Merge required columns into unplayed_df ---
     unplayed_df = unplayed_df.merge(
-        df[["appid", "sim_score", "tags", "developer", "new_cluster", "playtime_hours"]],
+        df[["appid", "sim_score", "tags", "developer", "new_cluster"]],
         on="appid",
         how="left",
         suffixes=("", "_df")
     )
 
+    #  Cluster bonus 
     liked_clusters = set(liked_df["new_cluster"])
     unplayed_df["cluster_bonus"] = unplayed_df["new_cluster"].apply(
         lambda c: 1.0 if c in liked_clusters else 0.0
     )
 
+    # Tag score (based on liked tag frequency) 
     liked_tags = Counter(
         tag.lower() for tags in liked_df["tags"] for tag in tags if tag.lower() not in TAG_STOPLIST
     )
@@ -172,6 +176,7 @@ def compute_hybrid_scores(df, unplayed_df, embeddings_np, tag_classes, top_n=10)
 
     unplayed_df["tag_score"] = unplayed_df["tags"].apply(tag_score)
 
+    # Developer score (based on total playtime on same devs) 
     dev_playtime = Counter()
     for _, row in liked_df.iterrows():
         for dev in row["developer"]:
@@ -183,84 +188,11 @@ def compute_hybrid_scores(df, unplayed_df, embeddings_np, tag_classes, top_n=10)
 
     unplayed_df["dev_score"] = unplayed_df["developer"].apply(dev_score)
 
-    # Normalize sim_score
+    #  Normalize embedding similarity 
     min_sim, max_sim = unplayed_df["sim_score"].min(), unplayed_df["sim_score"].max()
     unplayed_df["sim_norm"] = (unplayed_df["sim_score"] - min_sim) / (max_sim - min_sim + 1e-9)
 
-    # Normalize playtime_hours for scoring 
-    min_play, max_play = unplayed_df["playtime_hours"].min(), unplayed_df["playtime_hours"].max()
-    unplayed_df["playtime_norm"] = (unplayed_df["playtime_hours"] - min_play) / (max_play - min_play + 1e-9)
-
-    # Final weighted score including playtime
-    w_emb, w_tag, w_dev, w_cluster, w_playtime = 0.5, 0.25, 0.1, 0.05, 0.1
-    unplayed_df["final_score"] = (
-        w_emb * unplayed_df["sim_norm"] +
-        w_tag * unplayed_df["tag_score"] +
-        w_dev * unplayed_df["dev_score"] +
-        w_cluster * unplayed_df["cluster_bonus"] +
-        w_playtime * unplayed_df["playtime_norm"]
-    )
-
-    return unplayed_df.sort_values("final_score", ascending=False).head(top_n)
-
-
-def recommend_by_game_name_with_hybrid(
-    input_name, top_n, df, unplayed_df, embeddings_np, tag_index_map,
-    playtime_thresh=4, ach_thresh=5, play_ach_thresh=1
-):
-    # Update liked/unplayed according to thresholds 
-    df["liked"] = (
-        (df["achievement_pct_num"] >= ach_thresh) |
-        ((df["achievement_pct_num"] == 0) & (df["playtime_hours"] >= play_ach_thresh)) |
-        ((df["achievement_pct_num"] < ach_thresh) & (df["achievement_pct_num"] > 0) & (df["playtime_hours"] >= play_ach_thresh))
-    )
-
-    unplayed_df = df[
-        (df["achievement_pct_num"] < ach_thresh) &
-        (df["price_usd_num"] > 0) &
-        (df["playtime_hours"] <= playtime_thresh)
-    ].copy()
-
-    target_game = df[df["name"] == input_name]
-    if target_game.empty:
-        return [], None, df
-    target_idx = df.index.get_loc(target_game.index[0])
-    target_embedding = embeddings_np[target_idx].reshape(1, -1)
-
-    unplayed_indices = [df.index.get_loc(i) for i in unplayed_df.index]
-    unplayed_embeddings = embeddings_np[unplayed_indices]
-    sims = cosine_similarity(unplayed_embeddings, target_embedding).flatten()
-
-    unplayed_df["sim_score"] = sims
-
-    liked_df = df[df["liked"]]
-
-    # Compute tag score
-    liked_tags = Counter(tag.lower() for tags in liked_df["tags"] for tag in tags if tag.lower() not in TAG_STOPLIST)
-    max_tag_play = max(liked_tags.values()) if liked_tags else 1
-    def tag_score(tags):
-        return sum(liked_tags.get(t.lower(), 0) for t in tags) / max_tag_play
-    unplayed_df["tag_score"] = unplayed_df["tags"].apply(tag_score)
-
-    # Developer score
-    dev_playtime = Counter()
-    for _, row in liked_df.iterrows():
-        for dev in row["developer"]:
-            dev_playtime[dev] += row["playtime_hours"]
-    max_dev_play = max(dev_playtime.values()) if dev_playtime else 1
-    def dev_score(devs):
-        return sum(dev_playtime.get(d, 0) for d in devs) / max_dev_play
-    unplayed_df["dev_score"] = unplayed_df["developer"].apply(dev_score)
-
-    # Cluster bonus
-    liked_clusters = set(liked_df["new_cluster"])
-    unplayed_df["cluster_bonus"] = unplayed_df["new_cluster"].apply(lambda c: 1.0 if c in liked_clusters else 0.0)
-
-    # Normalize sim_score
-    min_sim, max_sim = unplayed_df["sim_score"].min(), unplayed_df["sim_score"].max()
-    unplayed_df["sim_norm"] = (unplayed_df["sim_score"] - min_sim) / (max_sim - min_sim + 1e-9)
-
-    # Weighted final score
+    #  Final weighted score including cluster bonus 
     w_emb, w_tag, w_dev, w_cluster = 0.55, 0.30, 0.1, 0.05
     unplayed_df["final_score"] = (
         w_emb * unplayed_df["sim_norm"] +
@@ -269,9 +201,79 @@ def recommend_by_game_name_with_hybrid(
         w_cluster * unplayed_df["cluster_bonus"]
     )
 
-    recommendations = unplayed_df.sort_values("final_score", ascending=False).head(top_n)
-    results = [(row["name"], row["final_score"], row["new_cluster"]) for _, row in recommendations.iterrows()]
-    return results, target_game.iloc[0], df
+    return unplayed_df.sort_values("final_score", ascending=False).head(top_n)
+
+def recommend_by_game_name_with_hybrid(
+    input_name,
+    top_n,
+    df,
+    unplayed_df,
+    embeddings_np,
+    playtime_thresh=4,
+    ach_thresh=5,
+    play_ach_thresh=1
+):
+    # Recompute liked mask
+    df["liked"] = (
+        (df["achievement_pct_num"] >= ach_thresh) |
+        ((df["achievement_pct_num"] == 0) & (df["playtime_hours"] >= play_ach_thresh)) |
+        ((df["achievement_pct_num"] < ach_thresh) &
+         (df["achievement_pct_num"] > 0) & (df["playtime_hours"] >= play_ach_thresh))
+    )
+
+    # Recompute unplayed_df (safe fallback if stale)
+    unplayed_df = df[
+        (df["achievement_pct_num"] < ach_thresh) &
+        (df["price_usd_num"] > 0) &
+        (df["playtime_hours"] <= playtime_thresh)
+    ].copy()
+
+    # Find target game
+    target_game = df[df["name"] == input_name]
+    if target_game.empty:
+        return [], None, df
+    target_row = target_game.iloc[0]
+    target_idx = df.index.get_loc(target_row.name)
+    target_embedding = embeddings_np[target_idx].reshape(1, -1)
+
+    # Compute embedding similarity for unplayed games
+    unplayed_indices = [df.index.get_loc(i) for i in unplayed_df.index]
+    unplayed_embeddings = embeddings_np[unplayed_indices]
+    sims = cosine_similarity(unplayed_embeddings, target_embedding).flatten()
+    unplayed_df["sim_score"] = sims
+
+    # --- Tag affinity: based on shared tags with target game ---
+    target_tags = set([tag.lower() for tag in target_row["tags"] if tag.lower() not in TAG_STOPLIST])
+    def tag_score(tags):
+        return len(target_tags & set([t.lower() for t in tags])) / (len(target_tags) + 1e-9)
+    unplayed_df["tag_score"] = unplayed_df["tags"].apply(tag_score)
+
+    # --- Developer affinity ---
+    target_devs = set(target_row["developer"])
+    def dev_score(devs):
+        return len(target_devs & set(devs)) / (len(target_devs) + 1e-9)
+    unplayed_df["dev_score"] = unplayed_df["developer"].apply(dev_score)
+
+    # --- Cluster bonus ---
+    target_cluster = target_row["new_cluster"]
+    unplayed_df["cluster_bonus"] = unplayed_df["new_cluster"].apply(lambda c: 1.0 if c == target_cluster else 0.0)
+
+    # --- Normalize sim_score ---
+    min_sim, max_sim = unplayed_df["sim_score"].min(), unplayed_df["sim_score"].max()
+    unplayed_df["sim_norm"] = (unplayed_df["sim_score"] - min_sim) / (max_sim - min_sim + 1e-9)
+
+    # --- Final score ---
+    w_emb, w_tag, w_dev, w_cluster = 0.55, 0.30, 0.10, 0.05
+    unplayed_df["final_score"] = (
+        w_emb * unplayed_df["sim_norm"] +
+        w_tag * unplayed_df["tag_score"] +
+        w_dev * unplayed_df["dev_score"] +
+        w_cluster * unplayed_df["cluster_bonus"]
+    )
+
+    top_recommendations = unplayed_df.sort_values("final_score", ascending=False).head(top_n)
+    results = [(row["name"], row["final_score"], row["new_cluster"]) for _, row in top_recommendations.iterrows()]
+    return results, target_row, df
 
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
