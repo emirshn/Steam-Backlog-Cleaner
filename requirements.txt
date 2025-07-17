@@ -1,0 +1,12 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+torch
+streamlit
+fuzzywuzzy
+requests
+umap-learn
+plotly
+python-dotenv
+sklearn.metrics.pairwise
