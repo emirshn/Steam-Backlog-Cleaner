@@ -95,3 +95,4 @@ Then follow the steps in your browser:
 I can add these when i get free time:
 * Wishlist-aware recommendations
 * Enable custom filters in the UI (e.g., genre or release year filters)
+* Beter noise and clustering
