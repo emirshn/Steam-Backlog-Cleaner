@@ -82,10 +82,11 @@ Then follow the steps in your browser:
 <img width="1484" height="449" alt="image" src="https://github.com/user-attachments/assets/641131e4-2043-499b-8caf-9ad0c9c3f3c8" />
 
 ## Known Issues
-* Recommendation accuracy is not perfect — some results may seem irrelevant.
+* Recommendation accuracy is not perfect — some results may seem irrelevant. Spesifically in spesific game name mode.
 * Score weights (embedding, tag, developer, cluster) can be manually tuned in code.
 * Heuristic thresholds for playtime/achievements may need user adjustments.
 * Steam tag and genre metadata can be noisy or inconsistent.
+* Similar games section can sometimes give weird games which not related to recommended game, this is because of noise and clustering.
 * Some games (especially free-to-play or newly added ones) may lack tags and are treated as noise.
 * Games priced below $5 are filtered out to reduce shovelware — this threshold can be changed in code (not in the UI).
 * Fetching large libraries can take a few minutes.
