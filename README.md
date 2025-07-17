@@ -1,6 +1,6 @@
 # Steam-Backlog-Cleaner
 
-A personalized Steam game recommendation app that analyzes your Steam library based on playtime, tags, and developers to suggest games you may enjoy.
+A personalized Steam game recommendation app that analyzes your Steam library based on playtime, tags, and developers to suggest games you may enjoy. Its made with data mining concepts like clustering, neural networks etc. 
 
 ---
 
